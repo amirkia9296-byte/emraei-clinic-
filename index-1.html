@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>پذیرش مطب دکتر امرایی</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f6fa;color:#17324d;font-family:Tahoma,Arial,sans-serif}
+.wrap{max-width:950px;margin:auto;padding:18px}
+.card{background:#fff;border-radius:18px;padding:22px;margin-bottom:18px;box-shadow:0 7px 28px #0001}
+h1,h2,h3{margin-top:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-weight:700;margin:8px 0 5px}
+input,button{width:100%;padding:12px;border:1px solid #ccd6e0;border-radius:10px;font-size:15px}
+button{border:0;background:#1769aa;color:#fff;cursor:pointer;margin-top:10px}
+button.secondary{background:#64748b}
+button.danger{background:#b42318}
+button.green{background:#198754}
+.slots{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:8px}
+.slot{border:1px solid #cbdbea;border-radius:12px;padding:13px;text-align:center;cursor:pointer;background:#eef5fb}
+.slot.selected{background:#1769aa;color:#fff}
+.slot.disabled{opacity:.45;cursor:not-allowed;text-decoration:line-through}
+.notice,.ok,.error{padding:13px;border-radius:10px;margin-top:12px}
+.notice{background:#fff7d6}.ok{background:#eaf8ef}.error{background:#fdecec}
+.row{padding:13px;border:1px solid #e1e7ef;border-radius:12px;margin:8px 0}
+.adminDate{border:1px solid #dbe3ec;border-radius:12px;padding:12px;margin:10px 0}
+.hidden{display:none}
+.small{font-size:12px;color:#667085}
+.cardNumber{font-size:20px;letter-spacing:2px;direction:ltr;display:inline-block;font-weight:bold;margin:8px 0}
+@media(max-width:700px){.grid,.slots{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="card">
+<h1>پذیرش و نوبت‌دهی مطب دکتر امرایی</h1>
+<p>کارمزد رزرو: <b>۱۰٬۰۰۰ تومان</b></p>
+<p>هزینه ویزیت در مطب و به‌صورت حضوری پرداخت می‌شود.</p>
+<div class="notice">
+پس از ثبت درخواست، مبلغ کارمزد را به کارت زیر واریز کنید و رسید واریز را نزد خود نگه دارید.
+نوبت پس از بررسی و تأیید منشی قطعی خواهد شد.
+<br>
+<b>شماره کارت:</b><br>
+<span class="cardNumber">6219861900618900</span>
+</div>
+</div>
+
+<div class="card">
+<h2>دریافت نوبت</h2>
+
+<div class="grid">
+<div>
+<label>نام</label>
+<input id="first" autocomplete="given-name">
+</div>
+
+<div>
+<label>نام خانوادگی</label>
+<input id="last" autocomplete="family-name">
+</div>
+
+<div>
+<label>کد ملی</label>
+<input id="national" maxlength="10" inputmode="numeric">
+</div>
+
+<div>
+<label>تلفن همراه</label>
+<input id="phone" maxlength="11" inputmode="tel" placeholder="09xxxxxxxxx">
+</div>
+
+<div>
+<label>تاریخ نوبت</label>
+<input id="date" type="date">
+</div>
+</div>
+
+<label>بازه زمانی</label>
+<div id="slots" class="slots"></div>
+
+<button id="book">ثبت درخواست نوبت</button>
+<div id="message"></div>
+</div>
+
+<div class="card">
+<h2>پنل منشی</h2>
+
+<div id="loginBox">
+<label>رمز عبور منشی</label>
+<input id="adminPassword" type="password">
+<button id="login">ورود</button>
+</div>
+
+<div id="adminPanel" class="hidden">
+<button class="secondary" id="refresh">به‌روزرسانی</button>
+<button class="danger" id="logout">خروج</button>
+
+<h3>مدیریت ساعت‌ها</h3>
+<div id="dateControls"></div>
+
+<h3>نوبت‌ها</h3>
+<div id="appointments"></div>
+</div>
+</div>
+
+</div>
+
+<script>
+const ADMIN_PASSWORD = "R60f71A92a96";
+const CARD_NUMBER = "6219861900618900";
+const FEE = 10000;
+
+const SLOT_NAMES = [
+"۱۶ تا ۱۶:۳۰",
+"۱۶:۳۰ تا ۱۷",
+"۱۷ تا ۱۷:۳۰",
+"۱۷:۳۰ تا ۱۸",
+"۱۸ تا ۱۸:۳۰",
+"۱۸:۳۰ تا ۱۹",
+"۱۹ تا ۱۹:۳۰",
+"۱۹:۳۰ تا ۲۰"
+];
+
+let appointments = JSON.parse(localStorage.getItem("emraei_appointments") || "[]");
+let closedSlots = JSON.parse(localStorage.getItem("emraei_closed") || "{}");
+let selectedSlot = null;
+
+const $ = id => document.getElementById(id);
+
+function save(){
+    localStorage.setItem("emraei_appointments", JSON.stringify(appointments));
+    localStorage.setItem("emraei_closed", JSON.stringify(closedSlots));
+}
+
+function toISO(date){
+    return date.toISOString().slice(0,10);
+}
+
+function today(){
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return d;
+}
+
+function maxDate(){
+    const d = today();
+    d.setDate(d.getDate()+7);
+    return d;
+}
+
+function setupDate(){
+    $("date").min = toISO(today());
+    $("date").max = toISO(maxDate());
+    $("date").value = toISO(today());
+    renderSlots();
+}
+
+function count(date,slot){
+    return appointments.filter(a =>
+        a.date === date &&
+        a.slot === slot &&
+        a.status !== "canceled"
+    ).length;
+}
+
+function renderSlots(){
+    selectedSlot = null;
+    const date = $("date").value;
+    const box = $("slots");
+    box.innerHTML = "";
+
+    SLOT_NAMES.forEach((name,i)=>{
+        const remaining = 3-count(date,i);
+        const closed = !!closedSlots[date+"_"+i];
+
+        const el = document.createElement("div");
+        el.className = "slot";
+
+        if(closed || remaining <= 0){
+            el.classList.add("disabled");
+            el.textContent = name + " — " +
+                (closed ? "بسته" : "تکمیل");
+        }else{
+            el.textContent = name + " — " + remaining + " جای خالی";
+
+            el.onclick = ()=>{
+                selectedSlot = i;
+                document.querySelectorAll(".slot")
+                    .forEach(x=>x.classList.remove("selected"));
+                el.classList.add("selected");
+            };
+        }
+
+        box.appendChild(el);
+    });
+}
+
+function validNational(v){
+    return /^\d{10}$/.test(v);
+}
+
+function validPhone(v){
+    return /^09\d{9}$/.test(v);
+}
+
+$("date").addEventListener("change",renderSlots);
+
+$("book").onclick = ()=>{
+    const first = $("first").value.trim();
+    const last = $("last").value.trim();
+    const national = $("national").value.trim();
+    const phone = $("phone").value.trim();
+    const date = $("date").value;
+
+    if(!first || !last || !validNational(national) ||
+       !validPhone(phone) || !date || selectedSlot === null){
+        $("message").innerHTML =
+            '<div class="error">لطفاً همه اطلاعات را صحیح وارد و یک بازه زمانی انتخاب کنید.</div>';
+        return;
+    }
+
+    if(date > toISO(maxDate())){
+        $("message").innerHTML =
+            '<div class="error">امکان گرفتن نوبت برای بیش از یک هفته بعد وجود ندارد.</div>';
+        return;
+    }
+
+    if(closedSlots[date+"_"+selectedSlot] || count(date,selectedSlot)>=3){
+        $("message").innerHTML =
+            '<div class="error">این بازه دیگر قابل رزرو نیست.</div>';
+        renderSlots();
+        return;
+    }
+
+    const appointment = {
+        id: Date.now(),
+        first,
+        last,
+        national,
+        phone,
+        date,
+        slot:selectedSlot,
+        fee:FEE,
+        status:"pending",
+        created:new Date().toLocaleString("fa-IR")
+    };
+
+    appointments.push(appointment);
+    save();
+
+    $("message").innerHTML = `
+    <div class="ok">
+    <b>درخواست نوبت ثبت شد.</b><br><br>
+    شماره درخواست: <b>${appointment.id}</b><br>
+    مبلغ کارمزد: <b>۱۰٬۰۰۰ تومان</b><br>
+    شماره کارت:<br>
+    <span class="cardNumber">${CARD_NUMBER}</span><br>
+    لطفاً مبلغ را واریز کنید و رسید را نگه دارید.
+    <br><br>
+    <b>وضعیت: در انتظار تأیید منشی</b>
+    </div>`;
+
+    $("first").value="";
+    $("last").value="";
+    $("national").value="";
+    $("phone").value="";
+
+    renderSlots();
+    renderAdmin();
+};
+
+$("login").onclick = ()=>{
+    if($("adminPassword").value === ADMIN_PASSWORD){
+        $("loginBox").classList.add("hidden");
+        $("adminPanel").classList.remove("hidden");
+        renderAdmin();
+    }else{
+        alert("رمز عبور اشتباه است.");
+    }
+};
+
+$("logout").onclick = ()=>{
+    $("loginBox").classList.remove("hidden");
+    $("adminPanel").classList.add("hidden");
+    $("adminPassword").value="";
+};
+
+$("refresh").onclick = renderAdmin;
+
+function confirmPayment(id){
+    const a = appointments.find(x=>x.id===id);
+    if(!a) return;
+
+    const ok = confirm(
+        "آیا رسید واریز را بررسی کرده‌اید و مطمئن هستید کارمزد پرداخت شده است؟"
+    );
+
+    if(!ok) return;
+
+    a.status="paid";
+    a.paidAt=new Date().toLocaleString("fa-IR");
+    save();
+    renderAdmin();
+    renderSlots();
+}
+
+function cancelAppointment(id){
+    const a=appointments.find(x=>x.id===id);
+    if(!a)return;
+
+    if(confirm("این درخواست لغو شود؟")){
+        a.status="canceled";
+        save();
+        renderAdmin();
+        renderSlots();
+    }
+}
+
+function toggleSlot(date,slot){
+    const key=date+"_"+slot;
+
+    if(closedSlots[key]){
+        delete closedSlots[key];
+    }else{
+        closedSlots[key]=true;
+    }
+
+    save();
+    renderAdmin();
+    renderSlots();
+}
+
+function renderAdmin(){
+    const dc=$("dateControls");
+    dc.innerHTML="";
+
+    const start=today();
+
+    for(let n=0;n<=7;n++){
+        const d=new Date(start);
+        d.setDate(d.getDate()+n);
+
+        const date=toISO(d);
+
+        const box=document.createElement("div");
+        box.className="adminDate";
+
+        const title=document.createElement("b");
+        title.textContent="تاریخ: "+date;
+        box.appendChild(title);
+
+        SLOT_NAMES.forEach((name,i)=>{
+            const key=date+"_"+i;
+            const btn=document.createElement("button");
+
+            btn.className=closedSlots[key]?"danger":"secondary";
+            btn.textContent =
+                (closedSlots[key]?"باز کردن ":"بستن ")+name;
+
+            btn.onclick=()=>toggleSlot(date,i);
+            box.appendChild(btn);
+        });
+
+        dc.appendChild(box);
+    }
+
+    const list=$("appointments");
+    list.innerHTML="";
+
+    if(appointments.length===0){
+        list.innerHTML="<p>هنوز درخواستی ثبت نشده است.</p>";
+        return;
+    }
+
+    [...appointments]
+    .sort((a,b)=>a.date.localeCompare(b.date) || a.slot-b.slot)
+    .forEach(a=>{
+        const row=document.createElement("div");
+        row.className="row";
+
+        let status =
+            a.status==="paid"
+            ? "✅ پرداخت تأیید و نوبت قطعی شده"
+            : a.status==="canceled"
+            ? "❌ لغو شده"
+            : "⏳ در انتظار تأیید پرداخت";
+
+        row.innerHTML=`
+        <b>${a.first} ${a.last}</b><br>
+        کد ملی: ${a.national}<br>
+        موبایل: ${a.phone}<br>
+        تاریخ: ${a.date}<br>
+        ساعت: ${SLOT_NAMES[a.slot]}<br>
+        مبلغ کارمزد: ${FEE.toLocaleString("fa-IR")} تومان<br>
+        وضعیت: <b>${status}</b>
+        `;
+
+        if(a.status==="pending"){
+            const confirm=document.createElement("button");
+            confirm.className="green";
+            confirm.textContent="تأیید نهایی پرداخت";
+            confirm.onclick=()=>confirmPayment(a.id);
+            row.appendChild(confirm);
+
+            const cancel=document.createElement("button");
+            cancel.className="danger";
+            cancel.textContent="لغو درخواست";
+            cancel.onclick=()=>cancelAppointment(a.id);
+            row.appendChild(cancel);
+        }
+
+        list.appendChild(row);
+    });
+}
+
+setupDate();
+</script>
+</body>
+</html>
